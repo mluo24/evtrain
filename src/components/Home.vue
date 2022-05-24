@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
-import { ItemClient, NamedAPIResource } from 'pokenode-ts'
+import { computedAsync } from '@vueuse/core'
+import { Item, ItemClient } from 'pokenode-ts'
 
 const MAX_EVS = 510
 const MAX_EVS_STAT = 255
@@ -72,25 +73,58 @@ const totalEVs = computed(() => {
   )
 })
 
-const evItems = ref<string[]>([])
+const pokerus = ref<boolean>(false)
+
+const selectedItem = ref<string>('')
+
+const evItems = ref<Item[]>([])
+
+const getItemDetails = async (name: string) => {
+  const itemData = await itemAPI.getItemByName(name)
+  return itemData
+}
+
+// parse the effect text
+const parseEffectText = (effectText: string, stat: string) => {
+  const end = effectText.indexOf('effort')
+  const start = effectText.indexOf('gains') + 'gains'.length
+  const relText = effectText.substring(start, end).trim()
+  if (relText.includes('double')) {
+    return (i: number) => i * 2
+  } else {
+  }
+}
+
+const effectText = computedAsync(
+  async () => {
+    if (selectedItem.value !== '') {
+      return (await getItemDetails(selectedItem.value)).effect_entries.filter(
+        (effect) => effect.language.name === 'en'
+      )[0].short_effect
+    } else return ''
+  },
+  '' // initial state
+)
+
+const computedIncrements = computed(() => {
+  return increments.map((i) => (pokerus.value ? i * 2 : i))
+})
 
 // item fetching
-const getEVItems = async () => {
-  const api = new ItemClient({
-    cacheOptions: { maxAge: 5000, exclude: { query: false } },
-  })
+const itemAPI = new ItemClient({
+  cacheOptions: { maxAge: 5000, exclude: { query: false } },
+})
 
-  await api
+const getEVItems = async () => {
+  await itemAPI
     .getItemCategoryByName('effort-training')
-    .then((data) => {
-      const items = data.items.map(async (itemResource) => {
-        const itemData = await api.getItemByName(itemResource.name)
-        return itemData.names.filter((name) => name.language.name === 'en')[0].name
-      })
-      Promise.all(items).then((res) => {
-        console.log(res)
-        evItems.value = res
-      })
+    .then(async (data) => {
+      const items = await Promise.all(
+        data.items.map((itemResource) => {
+          return getItemDetails(itemResource.name)
+        })
+      )
+      evItems.value = items
     })
     .catch((error) => console.error(error))
 }
@@ -104,10 +138,19 @@ getEVItems()
   <label class="label">
     <span class="label-text">Held item</span>
   </label>
-  <select class="select select-bordered">
-    <option disabled selected>No item</option>
-    <option v-for="item in evItems" :key="item">{{ item }}</option>
+  <select class="select select-bordered" v-model="selectedItem">
+    <option selected value="">No item</option>
+    <option v-for="item in evItems" :key="item.id" :value="item.name">
+      {{ item.names.filter((n) => n.language.name === 'en')[0].name }}
+    </option>
   </select>
+  {{ effectText }}
+  <div class="form-control">
+    <label class="label cursor-pointer">
+      <span class="label-text">Pokerus</span>
+      <input type="checkbox" class="toggle" v-model="pokerus" />
+    </label>
+  </div>
   <div v-for="(value, key) in statsCounter" :key="key" class="form-control">
     <label class="label">
       <span class="label-text">{{ statsToString[key] }}</span>
@@ -116,9 +159,9 @@ getEVItems()
       <button
         v-for="d in decrements"
         :key="d"
-        @click="changeStatEV(key, -d)"
-        class="btn btn-square"
+        class="btn btn-primary btn-square"
         :disabled="value - d < 0"
+        @click="changeStatEV(key, -d)"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
@@ -137,18 +180,18 @@ getEVItems()
       <input
         type="number"
         :value="statsCounter[key]"
-        @input="(event) => (statsCounter[key] = Number((event.target as HTMLInputElement).value))"
         min="0"
         :max="MAX_EVS_STAT"
         class="input input-bordered"
         :class="{ 'input-error': value > 255 }"
+        @input="(event) => (statsCounter[key] = Number((event.target as HTMLInputElement).value))"
       />
       <button
-        v-for="i in increments"
+        v-for="i in computedIncrements"
         :key="i"
-        @click="changeStatEV(key, i)"
-        class="btn btn-square"
+        class="btn btn-primary btn-square"
         :disabled="value + i > MAX_EVS_STAT || totalEVs + i > MAX_EVS"
+        @click="changeStatEV(key, i)"
       >
         <svg
           xmlns="http://www.w3.org/2000/svg"
