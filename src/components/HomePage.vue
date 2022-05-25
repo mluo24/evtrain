@@ -9,68 +9,40 @@ const MAX_EVS_STAT = 255
 const decrements = [1, 10].reverse()
 const increments = [1, 2, 3, 10]
 
-const statsToString = {
-  hp: 'HP',
-  attack: 'Attack',
-  defense: 'Defense',
-  specialAttack: 'Special Attack',
-  specialDefense: 'Special Defense',
-  speed: 'Speed',
-}
+const statsToString = new Map([
+  ['hp', 'HP'],
+  ['attack', 'Attack'],
+  ['defense', 'Defense'],
+  ['specialAttack', 'Special Attack'],
+  ['specialDefense', 'Special Defense'],
+  ['speed', 'Speed'],
+])
 
-const statsCounter = reactive({
-  hp: 0,
-  attack: 0,
-  defense: 0,
-  specialAttack: 0,
-  specialDefense: 0,
-  speed: 0,
-})
+const statsCounter = reactive(
+  new Map([
+    ['hp', ref(0)],
+    ['attack', ref(0)],
+    ['defense', ref(0)],
+    ['specialAttack', ref(0)],
+    ['specialDefense', ref(0)],
+    ['speed', ref(0)],
+  ])
+)
 
 const changeStatEV = (stat: string, amt: number) => {
-  switch (stat) {
-    case 'hp':
-      statsCounter.hp += amt
-      break
-    case 'attack':
-      statsCounter.attack += amt
-      break
-    case 'defense':
-      statsCounter.defense += amt
-      break
-    case 'specialAttack':
-      statsCounter.specialAttack += amt
-      break
-    case 'specialDefense':
-      statsCounter.specialDefense += amt
-      break
-    case 'speed':
-      statsCounter.speed += amt
-      break
-  }
+  const statRef = statsCounter.get(stat)
+  if (statRef !== undefined) statRef.value += amt
 }
 
 const reset = () => {
   const res = confirm('Are you sure you want to reset the EVs?')
-  if (res) {
-    statsCounter.hp = 0
-    statsCounter.attack = 0
-    statsCounter.defense = 0
-    statsCounter.specialAttack = 0
-    statsCounter.specialDefense = 0
-    statsCounter.speed = 0
-  }
+  if (res) for (const [key] of statsCounter.entries()) statsCounter.set(key, ref(0))
 }
 
 const totalEVs = computed(() => {
-  return (
-    statsCounter.hp +
-    statsCounter.attack +
-    statsCounter.defense +
-    statsCounter.specialAttack +
-    statsCounter.specialDefense +
-    statsCounter.speed
-  )
+  let sum = 0
+  for (const [, value] of statsCounter.entries()) sum += value.value
+  return sum
 })
 
 const pokerus = ref<boolean>(false)
@@ -84,14 +56,22 @@ const getItemDetails = async (name: string) => {
   return itemData
 }
 
-// parse the effect text
-const parseEffectText = (effectText: string, stat: string) => {
-  const end = effectText.indexOf('effort')
-  const start = effectText.indexOf('gains') + 'gains'.length
-  const relText = effectText.substring(start, end).trim()
+// parse the effect text, return a function with the correct value
+const parseEffectText = (effect: string, stat: string) => {
+  const end = effect.indexOf('effort')
+  const start = effect.indexOf('gains') + 'gains'.length
+  const relText = effect.substring(start, end).trim()
   if (relText.includes('double')) {
     return (i: number) => i * 2
+  } else if (relText.includes(stat)) {
+    const inc = Number(relText.substring(0, relText.indexOf(stat)).trim())
+    if (!isNaN(inc))
+      // if it matches the stat passed in
+      return (i: number) => i + inc
+    else return (i: number) => i
   } else {
+    // otherwise return identity function
+    return (i: number) => i
   }
 }
 
@@ -107,8 +87,22 @@ const effectText = computedAsync(
 )
 
 const computedIncrements = computed(() => {
-  return increments.map((i) => (pokerus.value ? i * 2 : i))
+  let incMap = new Map()
+  for (const [key] of statsCounter.entries()) {
+    const verboseName = statsToString.get(key)
+    if (verboseName)
+      incMap.set(
+        key,
+        increments.map((i) => {
+          const calcValue = parseEffectText(effectText.value, verboseName)(i)
+          return pokerus.value ? calcValue * 2 : calcValue
+        })
+      )
+  }
+  return incMap
 })
+
+console.log(computedIncrements.value)
 
 // item fetching
 const itemAPI = new ItemClient({
@@ -135,10 +129,11 @@ getEVItems()
 <template>
   <h1 class="text-3xl font-bold mb-6 text-center">EV Train!</h1>
   <h2 class="text-xl font-bold mb-4">Manual Version</h2>
+  <p>Note: Information only accurate for Generations III-VI</p>
   <label class="label">
     <span class="label-text">Held item</span>
   </label>
-  <select class="select select-bordered" v-model="selectedItem">
+  <select v-model="selectedItem" class="select select-bordered">
     <option selected value="">No item</option>
     <option v-for="item in evItems" :key="item.id" :value="item.name">
       {{ item.names.filter((n) => n.language.name === 'en')[0].name }}
@@ -148,19 +143,19 @@ getEVItems()
   <div class="form-control">
     <label class="label cursor-pointer">
       <span class="label-text">Pokerus</span>
-      <input type="checkbox" class="toggle" v-model="pokerus" />
+      <input v-model="pokerus" type="checkbox" class="toggle" />
     </label>
   </div>
-  <div v-for="(value, key) in statsCounter" :key="key" class="form-control">
+  <div v-for="[key, value] in statsCounter" :key="key" class="form-control">
     <label class="label">
-      <span class="label-text">{{ statsToString[key] }}</span>
+      <span class="label-text">{{ statsToString.get(key) }}</span>
     </label>
     <div class="input-group">
       <button
         v-for="d in decrements"
         :key="d"
         class="btn btn-primary btn-square"
-        :disabled="value - d < 0"
+        :disabled="value.value - d < 0"
         @click="changeStatEV(key, -d)"
       >
         <svg
@@ -179,18 +174,18 @@ getEVItems()
       </button>
       <input
         type="number"
-        :value="statsCounter[key]"
+        :value="statsCounter.get(key)?.value"
         min="0"
         :max="MAX_EVS_STAT"
         class="input input-bordered"
-        :class="{ 'input-error': value > 255 }"
-        @input="(event) => (statsCounter[key] = Number((event.target as HTMLInputElement).value))"
+        :class="{ 'input-error': value.value > 255 }"
+        @input="(event) => (statsCounter.set(key, ref(Number((event.target as HTMLInputElement).value))))"
       />
       <button
-        v-for="i in computedIncrements"
+        v-for="i in computedIncrements.get(key)"
         :key="i"
         class="btn btn-primary btn-square"
-        :disabled="value + i > MAX_EVS_STAT || totalEVs + i > MAX_EVS"
+        :disabled="value.value + i > MAX_EVS_STAT || totalEVs + i > MAX_EVS"
         @click="changeStatEV(key, i)"
       >
         <svg
