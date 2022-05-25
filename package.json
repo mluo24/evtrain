@@ -13,9 +13,11 @@
     "@vueuse/core": "^8.5.0",
     "daisyui": "^2.15.0",
     "pokenode-ts": "^1.13.2",
-    "vue": "^3.2.25"
+    "vue": "^3.2.25",
+    "vue-select": "^4.0.0-beta.3"
   },
   "devDependencies": {
+    "@types/vue-select": "^3.16.0",
     "@typescript-eslint/parser": "^5.25.0",
     "@vitejs/plugin-vue": "^2.3.3",
     "autoprefixer": "^10.4.7",

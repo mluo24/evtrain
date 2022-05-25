@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import { computedAsync } from '@vueuse/core'
 import { Item, ItemClient } from 'pokenode-ts'
 
@@ -34,15 +34,67 @@ const changeStatEV = (stat: string, amt: number) => {
   if (statRef !== undefined) statRef.value += amt
 }
 
-const reset = () => {
-  const res = confirm('Are you sure you want to reset the EVs?')
-  if (res) for (const [key] of statsCounter.entries()) statsCounter.set(key, ref(0))
-}
-
 const totalEVs = computed(() => {
   let sum = 0
   for (const [, value] of statsCounter.entries()) sum += value.value
   return sum
+})
+
+const presets = [
+  { name: 'HP Up 100', effect: [{ stat: 'hp', value: 100 }] },
+  { name: 'Protein 100', effect: [{ stat: 'attack', value: 100 }] },
+  { name: 'Iron 100', effect: [{ stat: 'defense', value: 100 }] },
+  { name: 'Calcium 100', effect: [{ stat: 'specialAttack', value: 100 }] },
+  { name: 'Zinc 100', effect: [{ stat: 'specialDefense', value: 100 }] },
+  { name: 'Carbos 100', effect: [{ stat: 'speed', value: 100 }] },
+  {
+    name: 'Physical Sweeper',
+    effect: [
+      { stat: 'attack', value: 100 },
+      { stat: 'speed', value: 100 },
+    ],
+  },
+  {
+    name: 'Special Sweeper',
+    effect: [
+      { stat: 'specialAttack', value: 100 },
+      { stat: 'speed', value: 100 },
+    ],
+  },
+  {
+    name: 'Physically Defensive',
+    effect: [
+      { stat: 'hp', value: 100 },
+      { stat: 'defense', value: 100 },
+    ],
+  },
+  {
+    name: 'Specially Defensive',
+    effect: [
+      { stat: 'hp', value: 100 },
+      { stat: 'specialDefense', value: 100 },
+    ],
+  },
+]
+
+const selectedPreset = ref('')
+
+watch(selectedPreset, (newP, oldP) => {
+  if (oldP !== '') {
+    const oldPresetEffect = presets.filter((p) => p.name === oldP)[0].effect
+    if (totalEVs.value > 0)
+      oldPresetEffect.forEach((e) => {
+        statsCounter.set(e.stat, ref(statsCounter.get(e.stat)!.value - e.value))
+      })
+  }
+
+  if (newP !== '') {
+    const newPresetEffect = presets.filter((p) => p.name === newP)[0].effect
+
+    newPresetEffect.forEach((e) => {
+      statsCounter.set(e.stat, ref(statsCounter.get(e.stat)!.value + e.value))
+    })
+  }
 })
 
 const pokerus = ref<boolean>(false)
@@ -102,8 +154,6 @@ const computedIncrements = computed(() => {
   return incMap
 })
 
-console.log(computedIncrements.value)
-
 // item fetching
 const itemAPI = new ItemClient({
   cacheOptions: { maxAge: 5000, exclude: { query: false } },
@@ -124,12 +174,32 @@ const getEVItems = async () => {
 }
 
 getEVItems()
+
+// RESET EVERYTHING
+const reset = () => {
+  const res = confirm('Are you sure you want to reset all EVs and settings?')
+  if (res) {
+    pokerus.value = false
+    selectedItem.value = ''
+    selectedPreset.value = ''
+    for (const [key] of statsCounter.entries()) statsCounter.set(key, ref(0))
+  }
+}
 </script>
 
 <template>
   <h1 class="text-3xl font-bold mb-6 text-center">EV Train!</h1>
   <h2 class="text-xl font-bold mb-4">Manual Version</h2>
   <p>Note: Information only accurate for Generations III-VI</p>
+  <label class="label">
+    <span class="label-text">Presets</span>
+  </label>
+  <select v-model="selectedPreset" class="select select-bordered">
+    <option selected value="">None</option>
+    <option v-for="(preset, i) in presets" :key="i" :value="preset.name">
+      {{ preset.name }}
+    </option>
+  </select>
   <label class="label">
     <span class="label-text">Held item</span>
   </label>
@@ -178,7 +248,7 @@ getEVItems()
         min="0"
         :max="MAX_EVS_STAT"
         class="input input-bordered"
-        :class="{ 'input-error': value.value > 255 }"
+        :class="{ 'input-error': value.value > 255 || value.value < 0 }"
         @input="(event) => (statsCounter.set(key, ref(Number((event.target as HTMLInputElement).value))))"
       />
       <button
@@ -206,7 +276,7 @@ getEVItems()
   </div>
   <button class="block my-5 btn btn-primary" @click="reset">Reset</button>
   Total EVs:
-  <span :class="{ 'text-red-500': totalEVs > MAX_EVS }">
+  <span :class="{ 'text-red-500': totalEVs > MAX_EVS || totalEVs < 0 }">
     {{ totalEVs }}/{{ MAX_EVS }}{{ totalEVs > MAX_EVS ? '; too many EVs!' : '' }}
   </span>
 </template>
