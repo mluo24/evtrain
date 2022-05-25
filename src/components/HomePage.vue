@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
 import { computedAsync } from '@vueuse/core'
-import { Item, ItemClient } from 'pokenode-ts'
+import { Item, ItemClient, NamedAPIResource, PokemonClient } from 'pokenode-ts'
 
 const MAX_EVS = 510
 const MAX_EVS_STAT = 255
@@ -175,6 +175,54 @@ const getEVItems = async () => {
 
 getEVItems()
 
+// POKEMON API
+
+const pokemonAPI = new PokemonClient({
+  cacheOptions: { maxAge: 10000, exclude: { query: false } },
+})
+
+// maybe make this pokemon and the pokemon species
+const pokemonList = ref<NamedAPIResource[]>([])
+
+const pokemonNamesList = ref<{ label: string; code: string }[]>([])
+
+const getPokemonList = async () => {
+  await pokemonAPI.listPokemons().then(async (data) => {
+    pokemonList.value = data.results
+  })
+}
+
+const getPokemonNamesList = async () => {
+  await pokemonAPI.listPokemonSpecies().then(async (data) => {
+    const pokemonNames = await Promise.all(
+      data.results.map(async (p) => {
+        const displayName = (
+          await pokemonAPI.getPokemonSpeciesByName(p.name)
+        ).names.filter((n) => n.language.name == 'en')[0].name
+        return {
+          label: displayName,
+          code: p.name,
+        }
+      })
+    )
+    pokemonNamesList.value = pokemonNames
+  })
+}
+
+getPokemonList()
+
+getPokemonNamesList()
+
+const selectedPokemon = ref()
+
+// pokemon history
+
+const pokemonBattleHistory = ref<{ label: string; code: string }[]>([])
+
+const addToHistory = () => {
+  pokemonBattleHistory.value.push(selectedPokemon.value)
+}
+
 // RESET EVERYTHING
 const reset = () => {
   const res = confirm('Are you sure you want to reset all EVs and settings?')
@@ -189,94 +237,113 @@ const reset = () => {
 
 <template>
   <h1 class="text-3xl font-bold mb-6 text-center">EV Train!</h1>
-  <h2 class="text-xl font-bold mb-4">Manual Version</h2>
   <p>Note: Information only accurate for Generations III-VI</p>
-  <label class="label">
-    <span class="label-text">Presets</span>
-  </label>
-  <select v-model="selectedPreset" class="select select-bordered">
-    <option selected value="">None</option>
-    <option v-for="(preset, i) in presets" :key="i" :value="preset.name">
-      {{ preset.name }}
-    </option>
-  </select>
-  <label class="label">
-    <span class="label-text">Held item</span>
-  </label>
-  <select v-model="selectedItem" class="select select-bordered">
-    <option selected value="">No item</option>
-    <option v-for="item in evItems" :key="item.id" :value="item.name">
-      {{ item.names.filter((n) => n.language.name === 'en')[0].name }}
-    </option>
-  </select>
-  {{ effectText }}
-  <div class="form-control">
-    <label class="label cursor-pointer">
-      <span class="label-text">Pokerus</span>
-      <input v-model="pokerus" type="checkbox" class="toggle" />
-    </label>
-  </div>
-  <div v-for="[key, value] in statsCounter" :key="key" class="form-control">
-    <label class="label">
-      <span class="label-text">{{ statsToString.get(key) }}</span>
-    </label>
-    <div class="input-group">
-      <button
-        v-for="d in decrements"
-        :key="d"
-        class="btn btn-primary btn-square"
-        :disabled="value.value - d < 0"
-        @click="changeStatEV(key, -d)"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-5 w-5"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-        >
-          <path
-            fill-rule="evenodd"
-            d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
-            clip-rule="evenodd"
+  <div class="grid gap-4 grid-cols-2 mt-4">
+    <div>
+      <h2 class="text-xl font-bold mb-3">Track Battles</h2>
+      <form @submit.prevent="addToHistory">
+        <label class="label">
+          <span class="label-text">Pokémon</span>
+        </label>
+        <v-select v-model="selectedPokemon" :options="pokemonNamesList"></v-select>
+        <button type="submit" class="btn btn-primary">Defeated</button>
+      </form>
+      <div class="max-h-screen overflow-auto">
+        <div v-for="hist in pokemonBattleHistory" :key="hist.code">
+          {{ hist.label }}
+        </div>
+      </div>
+    </div>
+    <div>
+      <h2 class="text-xl font-bold mb-3">Raw Values</h2>
+      <label class="label">
+        <span class="label-text">Presets</span>
+      </label>
+      <select v-model="selectedPreset" class="select select-bordered">
+        <option selected value="">None</option>
+        <option v-for="(preset, i) in presets" :key="i" :value="preset.name">
+          {{ preset.name }}
+        </option>
+      </select>
+      <label class="label">
+        <span class="label-text">Held item</span>
+      </label>
+      <select v-model="selectedItem" class="select select-bordered">
+        <option selected value="">No item</option>
+        <option v-for="item in evItems" :key="item.id" :value="item.name">
+          {{ item.names.filter((n) => n.language.name === 'en')[0].name }}
+        </option>
+      </select>
+      {{ effectText }}
+      <div class="form-control">
+        <label class="label cursor-pointer">
+          <span class="label-text">Pokerus</span>
+          <input v-model="pokerus" type="checkbox" class="toggle" />
+        </label>
+      </div>
+      <div v-for="[key, value] in statsCounter" :key="key" class="form-control">
+        <label class="label">
+          <span class="label-text">{{ statsToString.get(key) }}</span>
+        </label>
+        <div class="input-group">
+          <button
+            v-for="d in decrements"
+            :key="d"
+            class="btn btn-primary btn-square"
+            :disabled="value.value - d < 0"
+            @click="changeStatEV(key, -d)"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            {{ d }}
+          </button>
+          <input
+            type="number"
+            :value="statsCounter.get(key)?.value"
+            min="0"
+            :max="MAX_EVS_STAT"
+            class="input input-bordered"
+            :class="{ 'input-error': value.value > 255 || value.value < 0 }"
+            @input="(event) => (statsCounter.set(key, ref(Number((event.target as HTMLInputElement).value))))"
           />
-        </svg>
-        {{ d }}
-      </button>
-      <input
-        type="number"
-        :value="statsCounter.get(key)?.value"
-        min="0"
-        :max="MAX_EVS_STAT"
-        class="input input-bordered"
-        :class="{ 'input-error': value.value > 255 || value.value < 0 }"
-        @input="(event) => (statsCounter.set(key, ref(Number((event.target as HTMLInputElement).value))))"
-      />
-      <button
-        v-for="i in computedIncrements.get(key)"
-        :key="i"
-        class="btn btn-primary btn-square"
-        :disabled="value.value + i > MAX_EVS_STAT || totalEVs + i > MAX_EVS"
-        @click="changeStatEV(key, i)"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-5 w-5"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-        >
-          <path
-            fill-rule="evenodd"
-            d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-            clip-rule="evenodd"
-          />
-        </svg>
-        {{ i }}
-      </button>
+          <button
+            v-for="i in computedIncrements.get(key)"
+            :key="i"
+            class="btn btn-primary btn-square"
+            :disabled="value.value + i > MAX_EVS_STAT || totalEVs + i > MAX_EVS"
+            @click="changeStatEV(key, i)"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            {{ i }}
+          </button>
+        </div>
+      </div>
+      <button class="block my-5 btn btn-primary" @click="reset">Reset</button>
+      Total EVs:
+      <span :class="{ 'text-red-500': totalEVs > MAX_EVS || totalEVs < 0 }">
+        {{ totalEVs }}/{{ MAX_EVS }}{{ totalEVs > MAX_EVS ? '; too many EVs!' : '' }}
+      </span>
     </div>
   </div>
-  <button class="block my-5 btn btn-primary" @click="reset">Reset</button>
-  Total EVs:
-  <span :class="{ 'text-red-500': totalEVs > MAX_EVS || totalEVs < 0 }">
-    {{ totalEVs }}/{{ MAX_EVS }}{{ totalEVs > MAX_EVS ? '; too many EVs!' : '' }}
-  </span>
 </template>
