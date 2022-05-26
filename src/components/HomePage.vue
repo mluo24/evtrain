@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
 import { computedAsync } from '@vueuse/core'
-import { Item, ItemClient, NamedAPIResource, PokemonClient } from 'pokenode-ts'
+import {
+  Item,
+  ItemClient,
+  NamedAPIResource,
+  PokemonClient,
+  PokemonStat,
+} from 'pokenode-ts'
 
 const MAX_EVS = 510
 const MAX_EVS_STAT = 255
@@ -15,6 +21,8 @@ const statsToString = new Map([
   ['defense', 'Defense'],
   ['specialAttack', 'Special Attack'],
   ['specialDefense', 'Special Defense'],
+  ['special-attack', 'Special Attack'],
+  ['special-defense', 'Special Defense'],
   ['speed', 'Speed'],
 ])
 
@@ -181,7 +189,6 @@ const pokemonAPI = new PokemonClient({
   cacheOptions: { maxAge: 10000, exclude: { query: false } },
 })
 
-// maybe make this pokemon and the pokemon species
 const pokemonList = ref<NamedAPIResource[]>([])
 
 const pokemonNamesList = ref<{ label: string; code: string }[]>([])
@@ -217,19 +224,77 @@ const selectedPokemon = ref()
 
 // pokemon history
 
-const pokemonBattleHistory = ref<{ label: string; code: string }[]>([])
+const getStats = async (name: string) => {
+  return (await pokemonAPI.getPokemonByName(name)).stats
+}
 
-const addToHistory = () => {
-  pokemonBattleHistory.value.push(selectedPokemon.value)
+const pokemonBattleHistory = ref<
+  {
+    label: string
+    code: string
+    stats: PokemonStat[]
+    config: { effectText: string; pokerus: boolean }
+  }[]
+>([])
+
+const addToHistory = async () => {
+  if (selectedPokemon.value !== undefined) {
+    const stats = await getStats(selectedPokemon.value.code)
+    pokemonBattleHistory.value.push({
+      stats: stats,
+      ...selectedPokemon.value,
+      config: { effectText: effectText.value, pokerus: pokerus.value },
+    })
+  }
+}
+
+// remove all of the zero stats
+const relevantStats = (stats: PokemonStat[]) => {
+  return stats.filter((s) => s.effort !== 0)
+}
+
+// ACTUALLY, YOU SHOULD ALWAYS INCLUDE ITEM EFFECTS IN THE CALCULATION BECAUSE THAT'S HOW THE POWER ITEMS WORK!!!
+const historyValuesAdded = computed(() => {
+  let histVals = new Map()
+  pokemonBattleHistory.value.forEach((hist) => {
+    hist.stats.forEach((stat) => {
+      let statName = stat.stat.name
+      if (statName === 'special-attack') statName = 'specialAttack'
+      else if (statName === 'special-defense') statName = 'specialDefense'
+      // verbose stat name
+      const verboseName = statsToString.get(statName)
+      const prevVal =
+        histVals.get(statName) === undefined ? 0 : histVals.get(statName)
+      if (verboseName)
+        histVals.set(
+          statName,
+          prevVal +
+            (hist.config.pokerus
+              ? 2 * parseEffectText(hist.config.effectText, verboseName)(stat.effort)
+              : parseEffectText(hist.config.effectText, verboseName)(stat.effort))
+        )
+    })
+  })
+  return histVals
+})
+
+const processStatString = (stats: PokemonStat[]) => {
+  const relStats = relevantStats(stats)
+  return relStats.reduce((prev, curr) => {
+    return `${prev}, ${statsToString.get(curr.stat.name)}: ${curr.effort}`
+  }, '')
 }
 
 // RESET EVERYTHING
 const reset = () => {
-  const res = confirm('Are you sure you want to reset all EVs and settings?')
+  const res = confirm(
+    'Are you sure you want to reset all EVs, settings, and battle history?'
+  )
   if (res) {
     pokerus.value = false
     selectedItem.value = ''
     selectedPreset.value = ''
+    pokemonBattleHistory.value = []
     for (const [key] of statsCounter.entries()) statsCounter.set(key, ref(0))
   }
 }
@@ -250,7 +315,7 @@ const reset = () => {
       </form>
       <div class="max-h-screen overflow-auto">
         <div v-for="hist in pokemonBattleHistory" :key="hist.code">
-          {{ hist.label }}
+          {{ hist.label + processStatString(hist.stats) }}
         </div>
       </div>
     </div>
@@ -309,7 +374,10 @@ const reset = () => {
           </button>
           <input
             type="number"
-            :value="statsCounter.get(key)?.value"
+            :value="
+              (historyValuesAdded.get(key) ? historyValuesAdded.get(key) : 0) +
+              statsCounter.get(key)?.value
+            "
             min="0"
             :max="MAX_EVS_STAT"
             class="input input-bordered"
