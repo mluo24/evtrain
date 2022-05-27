@@ -9,6 +9,13 @@ import {
   PokemonStat,
 } from 'pokenode-ts'
 
+export interface BattleHistory {
+  label: string
+  code: string
+  stats: PokemonStat[]
+  config: { item: string; effectText: string; pokerus: boolean }
+}
+
 const MAX_EVS = 510
 const MAX_EVS_STAT = 255
 
@@ -228,14 +235,27 @@ const getStats = async (name: string) => {
   return (await pokemonAPI.getPokemonByName(name)).stats
 }
 
-const pokemonBattleHistory = ref<
-  {
-    label: string
-    code: string
-    stats: PokemonStat[]
-    config: { effectText: string; pokerus: boolean }
-  }[]
->([])
+const pokemonBattleHistory = ref<BattleHistory[]>([])
+
+const calculateHistoryLine = (hist: BattleHistory) => {
+  const statChanges = new Map()
+  const { stats, config } = hist
+  stats.forEach((stat) => {
+    let statName = stat.stat.name
+    if (statName === 'special-attack') statName = 'specialAttack'
+    else if (statName === 'special-defense') statName = 'specialDefense'
+    // verbose stat name
+    const verboseName = statsToString.get(statName)
+    if (verboseName)
+      statChanges.set(
+        statName,
+        config.pokerus
+          ? 2 * parseEffectText(config.effectText, verboseName)(stat.effort)
+          : parseEffectText(config.effectText, verboseName)(stat.effort)
+      )
+  })
+  return statChanges
+}
 
 const addToHistory = async () => {
   if (selectedPokemon.value !== undefined) {
@@ -243,7 +263,11 @@ const addToHistory = async () => {
     pokemonBattleHistory.value.push({
       stats: stats,
       ...selectedPokemon.value,
-      config: { effectText: effectText.value, pokerus: pokerus.value },
+      config: {
+        item: selectedItem.value,
+        effectText: effectText.value,
+        pokerus: pokerus.value,
+      },
     })
   }
 }
@@ -278,11 +302,26 @@ const historyValuesAdded = computed(() => {
   return histVals
 })
 
-const processStatString = (stats: PokemonStat[]) => {
-  const relStats = relevantStats(stats)
-  return relStats.reduce((prev, curr) => {
-    return `${prev}, ${statsToString.get(curr.stat.name)}: ${curr.effort}`
-  }, '')
+const deleteHistoryEntry = (hist: BattleHistory) => {
+  pokemonBattleHistory.value = pokemonBattleHistory.value.filter((h) => h !== hist)
+}
+
+const processStatString = (hist: BattleHistory) => {
+  const relStats = relevantStats(hist.stats)
+  return (
+    hist.label +
+    relStats.reduce((prev, curr) => {
+      return `${prev}, ${statsToString.get(curr.stat.name)}: ${curr.effort}`
+    }, '') +
+    '; Earned: ' +
+    [...calculateHistoryLine(hist).entries()].reduce((prev, curr) => {
+      if (curr[1] !== 0) return `${prev}, ${statsToString.get(curr[0])}: ${curr[1]}`
+      else return prev
+    }, '') +
+    ' with ' +
+    (hist.config.item ? hist.config.item : 'no item') +
+    (hist.config.pokerus ? ' and with Pokérus' : '')
+  )
 }
 
 // RESET EVERYTHING
@@ -315,7 +354,25 @@ const reset = () => {
       </form>
       <div class="max-h-screen overflow-auto">
         <div v-for="hist in pokemonBattleHistory" :key="hist.code">
-          {{ hist.label + processStatString(hist.stats) }}
+          {{ processStatString(hist) }}
+          <button
+            class="btn btn-circle btn-error btn-xs"
+            type="button"
+            @click="deleteHistoryEntry(hist)"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="h-5 w-5"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
