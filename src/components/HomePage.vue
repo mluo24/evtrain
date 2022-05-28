@@ -4,34 +4,21 @@ import { computedAsync } from '@vueuse/core'
 import {
   Item,
   ItemClient,
+  LocationClient,
+  Name,
   NamedAPIResource,
   PokemonClient,
   PokemonStat,
 } from 'pokenode-ts'
-
-export interface BattleHistory {
-  label: string
-  code: string
-  stats: PokemonStat[]
-  config: { item: string; effectText: string; pokerus: boolean }
-}
-
-const MAX_EVS = 510
-const MAX_EVS_STAT = 255
-
-const decrements = [1, 10].reverse()
-const increments = [1, 2, 3, 10]
-
-const statsToString = new Map([
-  ['hp', 'HP'],
-  ['attack', 'Attack'],
-  ['defense', 'Defense'],
-  ['specialAttack', 'Special Attack'],
-  ['specialDefense', 'Special Defense'],
-  ['special-attack', 'Special Attack'],
-  ['special-defense', 'Special Defense'],
-  ['speed', 'Speed'],
-])
+import { BattleHistory, SelectOption } from '../types'
+import {
+  MAX_EVS,
+  MAX_EVS_STAT,
+  decrements,
+  increments,
+  statsToString,
+  presets,
+} from '../utils'
 
 const statsCounter = reactive(
   new Map([
@@ -55,43 +42,6 @@ const totalEVs = computed(() => {
   return sum
 })
 
-const presets = [
-  { name: 'HP Up 100', effect: [{ stat: 'hp', value: 100 }] },
-  { name: 'Protein 100', effect: [{ stat: 'attack', value: 100 }] },
-  { name: 'Iron 100', effect: [{ stat: 'defense', value: 100 }] },
-  { name: 'Calcium 100', effect: [{ stat: 'specialAttack', value: 100 }] },
-  { name: 'Zinc 100', effect: [{ stat: 'specialDefense', value: 100 }] },
-  { name: 'Carbos 100', effect: [{ stat: 'speed', value: 100 }] },
-  {
-    name: 'Physical Sweeper',
-    effect: [
-      { stat: 'attack', value: 100 },
-      { stat: 'speed', value: 100 },
-    ],
-  },
-  {
-    name: 'Special Sweeper',
-    effect: [
-      { stat: 'specialAttack', value: 100 },
-      { stat: 'speed', value: 100 },
-    ],
-  },
-  {
-    name: 'Physically Defensive',
-    effect: [
-      { stat: 'hp', value: 100 },
-      { stat: 'defense', value: 100 },
-    ],
-  },
-  {
-    name: 'Specially Defensive',
-    effect: [
-      { stat: 'hp', value: 100 },
-      { stat: 'specialDefense', value: 100 },
-    ],
-  },
-]
-
 const selectedPreset = ref('')
 
 watch(selectedPreset, (newP, oldP) => {
@@ -111,6 +61,10 @@ watch(selectedPreset, (newP, oldP) => {
     })
   }
 })
+
+const getNameFromLang = (arr: Name[], language = 'en') => {
+  return arr.filter((n) => n.language.name === language)[0].name
+}
 
 const pokerus = ref<boolean>(false)
 
@@ -190,44 +144,106 @@ const getEVItems = async () => {
 
 getEVItems()
 
+// regions, locations, location areas, pokemon
+
+const regionList = ref<NamedAPIResource[]>([])
+
+const selectedRegion = ref<SelectOption>()
+
+const locationAPI = new LocationClient({
+  cacheOptions: { maxAge: 10000, exclude: { query: false } },
+})
+
+const getRegionList = async () => {
+  await locationAPI.listRegions().then(async (data) => {
+    regionList.value = data.results
+  })
+}
+
+getRegionList()
+
+const regionListOptions = computedAsync(async () => {
+  return Promise.all(
+    regionList.value.map(async (region) => {
+      const regionData = await locationAPI.getRegionByName(region.name)
+      return {
+        label: getNameFromLang(regionData.names),
+        code: region.name,
+      }
+    })
+  )
+}, [])
+
+const selectedLocation = ref<SelectOption>()
+
+const areaList = computedAsync(async () => {
+  if (selectedRegion.value !== undefined)
+    return Promise.all(
+      (await locationAPI.getRegionByName(selectedRegion.value.code)).locations.map(
+        async (location) => {
+          const regionData = await locationAPI.getLocationByName(location.name)
+          return { label: getNameFromLang(regionData.names), code: location.name }
+        }
+      )
+    )
+  else return []
+}, [])
+
 // POKEMON API
 
 const pokemonAPI = new PokemonClient({
   cacheOptions: { maxAge: 10000, exclude: { query: false } },
 })
 
-const pokemonList = ref<NamedAPIResource[]>([])
+// has only a list of the pokemon names
+const pokemonList = computedAsync(async () => {
+  // const plist: SelectOption[] = [{ label: 'hello', code: 'hello' }]
+  if (selectedLocation.value !== undefined) {
+    const loc = await locationAPI.getLocationByName(selectedLocation.value.code)
+    return (
+      await Promise.all(
+        loc.areas.map(async (area) => {
+          const locArea = await locationAPI.getLocationAreaByName(area.name)
+          return await Promise.all(
+            locArea.pokemon_encounters.map(async (encounter) => {
+              return encounter.pokemon.name
+            })
+          )
+        })
+      )
+    ).flat()
+  }
+  return []
+  // return plist.filter((p, index) => plist.indexOf(p) === index)
+}, [])
 
-const pokemonNamesList = ref<{ label: string; code: string }[]>([])
+// const pokemonList = computedAsync(async () => {
+//   const plist: SelectOption[] = []
+//   if (selectedLocation.value !== undefined) {
+//     const loc = await locationAPI.getLocationByName(selectedLocation.value.code)
+//     loc.areas.forEach(async (area) => {
+//       const locArea = await locationAPI.getLocationAreaByName(area.name)
+//       locArea.pokemon_encounters.forEach(async (encounter) => {
+//         console.log('hello')
+//         plist.push({ label: 'hello', code: encounter.pokemon.name })
+//       })
+//     })
+//   }
+//   return plist.filter((p, index) => plist.indexOf(p) === index)
+// }, [])
 
-const getPokemonList = async () => {
-  await pokemonAPI.listPokemons().then(async (data) => {
-    pokemonList.value = data.results
-  })
-}
+const pokemonNamesList = computedAsync(async () => {
+  return Promise.all(
+    pokemonList.value.map(async (p) => {
+      return {
+        label: getNameFromLang((await pokemonAPI.getPokemonSpeciesByName(p)).names),
+        code: p,
+      }
+    })
+  )
+}, [])
 
-const getPokemonNamesList = async () => {
-  await pokemonAPI.listPokemonSpecies().then(async (data) => {
-    const pokemonNames = await Promise.all(
-      data.results.map(async (p) => {
-        const displayName = (
-          await pokemonAPI.getPokemonSpeciesByName(p.name)
-        ).names.filter((n) => n.language.name == 'en')[0].name
-        return {
-          label: displayName,
-          code: p.name,
-        }
-      })
-    )
-    pokemonNamesList.value = pokemonNames
-  })
-}
-
-getPokemonList()
-
-getPokemonNamesList()
-
-const selectedPokemon = ref()
+const selectedPokemon = ref<SelectOption>()
 
 // pokemon history
 
@@ -346,6 +362,14 @@ const reset = () => {
     <div>
       <h2 class="text-xl font-bold mb-3">Track Battles</h2>
       <form @submit.prevent="addToHistory">
+        <label class="label">
+          <span class="label-text">Region</span>
+        </label>
+        <v-select v-model="selectedRegion" :options="regionListOptions"></v-select>
+        <label class="label">
+          <span class="label-text">Area</span>
+        </label>
+        <v-select v-model="selectedLocation" :options="areaList"></v-select>
         <label class="label">
           <span class="label-text">Pokémon</span>
         </label>
