@@ -260,7 +260,7 @@ const calculateHistoryLine = (hist: BattleHistory) => {
 const addToHistory = async () => {
   if (selectedPokemon.value !== undefined) {
     const stats = await getStats(selectedPokemon.value.code)
-    pokemonBattleHistory.value.push({
+    const hist = {
       stats: stats,
       ...selectedPokemon.value,
       config: {
@@ -268,6 +268,11 @@ const addToHistory = async () => {
         effectText: effectText.value,
         pokerus: pokerus.value,
       },
+    }
+    pokemonBattleHistory.value.push(hist)
+    const entries = [...calculateHistoryLine(hist).entries()]
+    entries.forEach(([key, value]) => {
+      statsCounter.set(key, ref(statsCounter.get(key)!.value + value))
     })
   }
 }
@@ -278,32 +283,36 @@ const relevantStats = (stats: PokemonStat[]) => {
 }
 
 // ACTUALLY, YOU SHOULD ALWAYS INCLUDE ITEM EFFECTS IN THE CALCULATION BECAUSE THAT'S HOW THE POWER ITEMS WORK!!!
-const historyValuesAdded = computed(() => {
-  let histVals = new Map()
-  pokemonBattleHistory.value.forEach((hist) => {
-    hist.stats.forEach((stat) => {
-      let statName = stat.stat.name
-      if (statName === 'special-attack') statName = 'specialAttack'
-      else if (statName === 'special-defense') statName = 'specialDefense'
-      // verbose stat name
-      const verboseName = statsToString.get(statName)
-      const prevVal =
-        histVals.get(statName) === undefined ? 0 : histVals.get(statName)
-      if (verboseName)
-        histVals.set(
-          statName,
-          prevVal +
-            (hist.config.pokerus
-              ? 2 * parseEffectText(hist.config.effectText, verboseName)(stat.effort)
-              : parseEffectText(hist.config.effectText, verboseName)(stat.effort))
-        )
-    })
-  })
-  return histVals
-})
+// const historyValuesAdded = computed(() => {
+//   let histVals = new Map()
+//   pokemonBattleHistory.value.forEach((hist) => {
+//     hist.stats.forEach((stat) => {
+//       let statName = stat.stat.name
+//       if (statName === 'special-attack') statName = 'specialAttack'
+//       else if (statName === 'special-defense') statName = 'specialDefense'
+//       // verbose stat name
+//       const verboseName = statsToString.get(statName)
+//       const prevVal =
+//         histVals.get(statName) === undefined ? 0 : histVals.get(statName)
+//       if (verboseName)
+//         histVals.set(
+//           statName,
+//           prevVal +
+//             (hist.config.pokerus
+//               ? 2 * parseEffectText(hist.config.effectText, verboseName)(stat.effort)
+//               : parseEffectText(hist.config.effectText, verboseName)(stat.effort))
+//         )
+//     })
+//   })
+//   return histVals
+// })
 
 const deleteHistoryEntry = (hist: BattleHistory) => {
   pokemonBattleHistory.value = pokemonBattleHistory.value.filter((h) => h !== hist)
+  const entries = [...calculateHistoryLine(hist).entries()]
+  entries.forEach(([key, value]) => {
+    statsCounter.set(key, ref(statsCounter.get(key)!.value - value))
+  })
 }
 
 const processStatString = (hist: BattleHistory) => {
@@ -442,10 +451,7 @@ const reset = () => {
           </button>
           <input
             type="number"
-            :value="
-              (historyValuesAdded.get(key) ? historyValuesAdded.get(key) : 0) +
-              statsCounter.get(key)?.value
-            "
+            :value="statsCounter.get(key)?.value"
             min="0"
             :max="MAX_EVS_STAT"
             class="input input-bordered"
