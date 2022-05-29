@@ -197,10 +197,9 @@ const pokemonAPI = new PokemonClient({
 
 // has only a list of the pokemon names
 const pokemonList = computedAsync(async () => {
-  // const plist: SelectOption[] = [{ label: 'hello', code: 'hello' }]
   if (selectedLocation.value !== undefined) {
     const loc = await locationAPI.getLocationByName(selectedLocation.value.code)
-    return (
+    const pList = (
       await Promise.all(
         loc.areas.map(async (area) => {
           const locArea = await locationAPI.getLocationAreaByName(area.name)
@@ -212,25 +211,10 @@ const pokemonList = computedAsync(async () => {
         })
       )
     ).flat()
+    return pList.filter((p, index) => pList.indexOf(p) === index)
   }
   return []
-  // return plist.filter((p, index) => plist.indexOf(p) === index)
 }, [])
-
-// const pokemonList = computedAsync(async () => {
-//   const plist: SelectOption[] = []
-//   if (selectedLocation.value !== undefined) {
-//     const loc = await locationAPI.getLocationByName(selectedLocation.value.code)
-//     loc.areas.forEach(async (area) => {
-//       const locArea = await locationAPI.getLocationAreaByName(area.name)
-//       locArea.pokemon_encounters.forEach(async (encounter) => {
-//         console.log('hello')
-//         plist.push({ label: 'hello', code: encounter.pokemon.name })
-//       })
-//     })
-//   }
-//   return plist.filter((p, index) => plist.indexOf(p) === index)
-// }, [])
 
 const pokemonNamesList = computedAsync(async () => {
   return Promise.all(
@@ -325,15 +309,15 @@ const deleteHistoryEntry = (hist: BattleHistory) => {
 const processStatString = (hist: BattleHistory) => {
   const relStats = relevantStats(hist.stats)
   return (
-    hist.label +
-    relStats.reduce((prev, curr) => {
-      return `${prev}, ${statsToString.get(curr.stat.name)}: ${curr.effort}`
-    }, '') +
+    'EVs: ' +
+    relStats
+      .map((s) => `${statsToString.get(s.stat.name)}: ${s.effort}`)
+      .join(', ') +
     '; Earned: ' +
-    [...calculateHistoryLine(hist).entries()].reduce((prev, curr) => {
-      if (curr[1] !== 0) return `${prev}, ${statsToString.get(curr[0])}: ${curr[1]}`
-      else return prev
-    }, '') +
+    [...calculateHistoryLine(hist).entries()]
+      .filter((e) => e[1] !== 0)
+      .map((e) => `${e[1]} ${statsToString.get(e[0])} EV${e[1] === 1 ? '' : 's'}`)
+      .join(', ') +
     ' with ' +
     (hist.config.item ? hist.config.item : 'no item') +
     (hist.config.pokerus ? ' and with Pokérus' : '')
@@ -361,7 +345,7 @@ const reset = () => {
   <div class="grid gap-4 grid-cols-2 mt-4">
     <div>
       <h2 class="text-xl font-bold mb-3">Track Battles</h2>
-      <form @submit.prevent="addToHistory">
+      <form class="mb-4" @submit.prevent="addToHistory">
         <label class="label">
           <span class="label-text">Region</span>
         </label>
@@ -377,7 +361,10 @@ const reset = () => {
         <button type="submit" class="btn btn-primary">Defeated</button>
       </form>
       <div class="max-h-screen overflow-auto">
+        <h3 class="text-lg font-bold mb-3">History</h3>
         <div v-for="hist in pokemonBattleHistory" :key="hist.code">
+          <span class="font-semibold">{{ hist.label }}</span
+          >:
           {{ processStatString(hist) }}
           <button
             class="btn btn-circle btn-error btn-xs"
