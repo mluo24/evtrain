@@ -6,6 +6,8 @@ export const MAX_EVS_STAT = 255
 export const decrements = [1, 10].reverse()
 export const increments = [1, 2, 3, 10]
 
+export const regions = ['Hoenn', 'Sinnoh', 'Unova', 'Kalos']
+
 export const statsToString = new Map([
   ['hp', 'HP'],
   ['attack', 'Attack'],

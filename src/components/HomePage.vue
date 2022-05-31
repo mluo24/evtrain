@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { computedAsync } from '@vueuse/core'
 import {
   Item,
   ItemClient,
   LocationClient,
   Name,
-  NamedAPIResource,
   PokemonClient,
   PokemonStat,
 } from 'pokenode-ts'
@@ -18,6 +17,7 @@ import {
   increments,
   statsToString,
   presets,
+  regions,
 } from '../utils'
 
 const statsCounter = reactive(
@@ -123,6 +123,14 @@ const computedIncrements = computed(() => {
   return incMap
 })
 
+// LOADING FOR THE APIs
+const loading = reactive({
+  isLoading: true,
+  isLoadingArea: false,
+  isLoadingPokemon: false,
+  isLoadingAddHistory: false,
+})
+
 // item fetching
 const itemAPI = new ItemClient({
   cacheOptions: { maxAge: 5000, exclude: { query: false } },
@@ -142,11 +150,9 @@ const getEVItems = async () => {
     .catch((error) => console.error(error))
 }
 
-getEVItems()
-
 // regions, locations, location areas, pokemon
 
-const regionList = ref<NamedAPIResource[]>([])
+const regionList = ref<string[]>(regions)
 
 const selectedRegion = ref<SelectOption>()
 
@@ -154,25 +160,14 @@ const locationAPI = new LocationClient({
   cacheOptions: { maxAge: 10000, exclude: { query: false } },
 })
 
-const getRegionList = async () => {
-  await locationAPI.listRegions().then(async (data) => {
-    regionList.value = data.results
+const regionListOptions = computed(() => {
+  return regionList.value.map((region) => {
+    return {
+      label: region,
+      code: region.toLowerCase(),
+    }
   })
-}
-
-getRegionList()
-
-const regionListOptions = computedAsync(async () => {
-  return Promise.all(
-    regionList.value.map(async (region) => {
-      const regionData = await locationAPI.getRegionByName(region.name)
-      return {
-        label: getNameFromLang(regionData.names),
-        code: region.name,
-      }
-    })
-  )
-}, [])
+})
 
 const selectedLocation = ref<SelectOption>()
 
@@ -188,6 +183,12 @@ const areaList = computedAsync(async () => {
     )
   else return []
 }, [])
+
+// add watchers for loading?
+
+watch(areaList, () => {
+  loading.isLoadingArea = false
+})
 
 // POKEMON API
 
@@ -217,14 +218,32 @@ const pokemonList = computedAsync(async () => {
 }, [])
 
 const pokemonNamesList = computedAsync(async () => {
-  return Promise.all(
+  const namesList = await Promise.all(
     pokemonList.value.map(async (p) => {
       return {
-        label: getNameFromLang((await pokemonAPI.getPokemonSpeciesByName(p)).names),
+        label: getNameFromLang(
+          (
+            await pokemonAPI.getPokemonSpeciesByName(
+              (
+                await pokemonAPI.getPokemonByName(p)
+              ).species.name
+            )
+          ).names
+        ),
         code: p,
       }
     })
   )
+  return namesList.filter((p, index) => {
+    let firstIndex = 0
+    for (let i = 0; i < namesList.length; i++) {
+      if (namesList[i].label === p.label) {
+        firstIndex = i
+        break
+      }
+    }
+    return firstIndex === index
+  })
 }, [])
 
 const selectedPokemon = ref<SelectOption>()
@@ -258,6 +277,7 @@ const calculateHistoryLine = (hist: BattleHistory) => {
 }
 
 const addToHistory = async () => {
+  loading.isLoadingAddHistory = true
   if (selectedPokemon.value !== undefined) {
     const stats = await getStats(selectedPokemon.value.code)
     const hist = {
@@ -275,37 +295,13 @@ const addToHistory = async () => {
       statsCounter.set(key, ref(statsCounter.get(key)!.value + value))
     })
   }
+  loading.isLoadingAddHistory = false
 }
 
 // remove all of the zero stats
 const relevantStats = (stats: PokemonStat[]) => {
   return stats.filter((s) => s.effort !== 0)
 }
-
-// ACTUALLY, YOU SHOULD ALWAYS INCLUDE ITEM EFFECTS IN THE CALCULATION BECAUSE THAT'S HOW THE POWER ITEMS WORK!!!
-// const historyValuesAdded = computed(() => {
-//   let histVals = new Map()
-//   pokemonBattleHistory.value.forEach((hist) => {
-//     hist.stats.forEach((stat) => {
-//       let statName = stat.stat.name
-//       if (statName === 'special-attack') statName = 'specialAttack'
-//       else if (statName === 'special-defense') statName = 'specialDefense'
-//       // verbose stat name
-//       const verboseName = statsToString.get(statName)
-//       const prevVal =
-//         histVals.get(statName) === undefined ? 0 : histVals.get(statName)
-//       if (verboseName)
-//         histVals.set(
-//           statName,
-//           prevVal +
-//             (hist.config.pokerus
-//               ? 2 * parseEffectText(hist.config.effectText, verboseName)(stat.effort)
-//               : parseEffectText(hist.config.effectText, verboseName)(stat.effort))
-//         )
-//     })
-//   })
-//   return histVals
-// })
 
 const deleteHistoryEntry = (hist: BattleHistory) => {
   pokemonBattleHistory.value = pokemonBattleHistory.value.filter((h) => h !== hist)
@@ -346,12 +342,18 @@ const reset = () => {
     for (const [key] of statsCounter.entries()) statsCounter.set(key, ref(0))
   }
 }
+
+// when mounted, call all of the functions here
+onMounted(async () => {
+  await getEVItems()
+  loading.isLoading = false
+})
 </script>
 
 <template>
   <h1 class="text-3xl font-bold mb-6 text-center">EV Train!</h1>
   <p>Note: Information only accurate for Generations III-VI</p>
-  <div class="grid gap-4 grid-cols-2 mt-4">
+  <div v-if="!loading.isLoading" class="grid gap-4 grid-cols-2 mt-4">
     <div>
       <h2 class="text-xl font-bold mb-3">Track Battles</h2>
       <form class="mb-4" @submit.prevent="addToHistory">
@@ -360,14 +362,33 @@ const reset = () => {
         </label>
         <v-select v-model="selectedRegion" :options="regionListOptions"></v-select>
         <label class="label">
-          <span class="label-text">Area</span>
+          <span class="label-text">Area</span
+          ><svg
+            v-if="loading.isLoadingArea"
+            xmlns="http://www.w3.org/2000/svg"
+            class="h-5 w-5"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z"
+              clip-rule="evenodd"
+            />
+          </svg>
         </label>
         <v-select v-model="selectedLocation" :options="areaList"></v-select>
         <label class="label">
           <span class="label-text">Pokémon</span>
         </label>
         <v-select v-model="selectedPokemon" :options="pokemonNamesList"></v-select>
-        <button type="submit" class="btn btn-primary">Defeated</button>
+        <button
+          type="submit"
+          class="btn btn-primary"
+          :class="{ loading: loading.isLoadingAddHistory }"
+        >
+          Defeated
+        </button>
       </form>
       <div class="max-h-screen overflow-auto">
         <h3 class="text-lg font-bold mb-3">History</h3>
@@ -488,4 +509,5 @@ const reset = () => {
       </span>
     </div>
   </div>
+  <div v-else>Loading</div>
 </template>
