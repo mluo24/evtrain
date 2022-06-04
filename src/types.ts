@@ -1,4 +1,4 @@
-import { PokemonStat } from 'pokenode-ts'
+import { Item, PokemonStat } from 'pokenode-ts'
 
 export interface BattleHistory {
   label: string
@@ -16,4 +16,9 @@ export interface SelectOption {
 
 export interface EVEditorProps {
   stat: string
+  value: number
+}
+
+export interface StatEditorProps {
+  evItems: Item[]
 }

@@ -1,24 +1,25 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { computedAsync } from '@vueuse/core'
-import {
-  Item,
-  ItemClient,
-  LocationClient,
-  Name,
-  PokemonClient,
-  PokemonStat,
-} from 'pokenode-ts'
+import { Item, LocationClient, Name, PokemonClient, PokemonStat } from 'pokenode-ts'
 import { BattleHistory, SelectOption } from '../types'
 import {
   MAX_EVS,
-  MAX_EVS_STAT,
-  decrements,
-  increments,
   statsToString,
   presets,
   regions,
+  parseEffectText,
+  getItemDetails,
+  itemAPI,
 } from '../utils'
+import { useStatsStore } from '../stores/stats'
+import { useSelectionsStore } from '../stores/selections'
+import { useHistoryStore } from '../stores/history'
+import StatEditor from './StatEditor.vue'
+
+const statsStore = useStatsStore()
+const selectionsStore = useSelectionsStore()
+const historyStore = useHistoryStore()
 
 const statsCounter = reactive(
   new Map([
@@ -31,10 +32,10 @@ const statsCounter = reactive(
   ])
 )
 
-const changeStatEV = (stat: string, amt: number) => {
-  const statRef = statsCounter.get(stat)
-  if (statRef !== undefined) statRef.value += amt
-}
+// const changeStatEV = (stat: string, amt: number) => {
+//   const statRef = statsCounter.get(stat)
+//   if (statRef !== undefined) statRef.value += amt
+// }
 
 const totalEVs = computed(() => {
   let sum = 0
@@ -72,30 +73,6 @@ const selectedItem = ref<string>('')
 
 const evItems = ref<Item[]>([])
 
-const getItemDetails = async (name: string) => {
-  const itemData = await itemAPI.getItemByName(name)
-  return itemData
-}
-
-// parse the effect text, return a function with the correct value
-const parseEffectText = (effect: string, stat: string) => {
-  const end = effect.indexOf('effort')
-  const start = effect.indexOf('gains') + 'gains'.length
-  const relText = effect.substring(start, end).trim()
-  if (relText.includes('double')) {
-    return (i: number) => i * 2
-  } else if (relText.includes(stat)) {
-    const inc = Number(relText.substring(0, relText.indexOf(stat)).trim())
-    if (!isNaN(inc))
-      // if it matches the stat passed in
-      return (i: number) => i + inc
-    else return (i: number) => i
-  } else {
-    // otherwise return identity function
-    return (i: number) => i
-  }
-}
-
 const effectText = computedAsync(
   async () => {
     if (selectedItem.value !== '') {
@@ -107,21 +84,21 @@ const effectText = computedAsync(
   '' // initial state
 )
 
-const computedIncrements = computed(() => {
-  let incMap = new Map()
-  for (const [key] of statsCounter.entries()) {
-    const verboseName = statsToString.get(key)
-    if (verboseName)
-      incMap.set(
-        key,
-        increments.map((i) => {
-          const calcValue = parseEffectText(effectText.value, verboseName)(i)
-          return pokerus.value ? calcValue * 2 : calcValue
-        })
-      )
-  }
-  return incMap
-})
+// const computedIncrements = computed(() => {
+//   let incMap = new Map()
+//   for (const [key] of statsCounter.entries()) {
+//     const verboseName = statsToString.get(key)
+//     if (verboseName)
+//       incMap.set(
+//         key,
+//         increments.map((i) => {
+//           const calcValue = parseEffectText(effectText.value, verboseName)(i)
+//           return pokerus.value ? calcValue * 2 : calcValue
+//         })
+//       )
+//   }
+//   return incMap
+// })
 
 // LOADING FOR THE APIs
 const loading = reactive({
@@ -132,9 +109,6 @@ const loading = reactive({
 })
 
 // item fetching
-const itemAPI = new ItemClient({
-  cacheOptions: { maxAge: 5000, exclude: { query: false } },
-})
 
 const getEVItems = async () => {
   await itemAPI
@@ -335,6 +309,9 @@ const reset = () => {
     'Are you sure you want to reset all EVs, settings, and battle history?'
   )
   if (res) {
+    selectionsStore.$reset()
+    statsStore.$reset()
+    historyStore.$reset()
     pokerus.value = false
     selectedItem.value = ''
     selectedPreset.value = ''
@@ -419,94 +396,17 @@ onMounted(async () => {
     </div>
     <div>
       <h2 class="text-xl font-bold mb-3">Raw Values</h2>
-      <label class="label">
-        <span class="label-text">Presets</span>
-      </label>
-      <select v-model="selectedPreset" class="select select-bordered">
-        <option selected value="">None</option>
-        <option v-for="(preset, i) in presets" :key="i" :value="preset.name">
-          {{ preset.name }}
-        </option>
-      </select>
-      <label class="label">
-        <span class="label-text">Held item</span>
-      </label>
-      <select v-model="selectedItem" class="select select-bordered">
-        <option selected value="">No item</option>
-        <option v-for="item in evItems" :key="item.id" :value="item.name">
-          {{ item.names.filter((n) => n.language.name === 'en')[0].name }}
-        </option>
-      </select>
-      {{ effectText }}
-      <div class="form-control">
-        <label class="label cursor-pointer">
-          <span class="label-text">Pokerus</span>
-          <input v-model="pokerus" type="checkbox" class="toggle" />
-        </label>
-      </div>
-      <div v-for="[key, value] in statsCounter" :key="key" class="form-control">
-        <label class="label">
-          <span class="label-text">{{ statsToString.get(key) }}</span>
-        </label>
-        <div class="input-group">
-          <button
-            v-for="d in decrements"
-            :key="d"
-            class="btn btn-primary btn-square"
-            :disabled="value.value - d < 0"
-            @click="changeStatEV(key, -d)"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fill-rule="evenodd"
-                d="M3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            {{ d }}
-          </button>
-          <input
-            type="number"
-            :value="statsCounter.get(key)?.value"
-            min="0"
-            :max="MAX_EVS_STAT"
-            class="input input-bordered"
-            :class="{ 'input-error': value.value > 255 || value.value < 0 }"
-            @input="(event) => (statsCounter.set(key, ref(Number((event.target as HTMLInputElement).value))))"
-          />
-          <button
-            v-for="i in computedIncrements.get(key)"
-            :key="i"
-            class="btn btn-primary btn-square"
-            :disabled="value.value + i > MAX_EVS_STAT || totalEVs + i > MAX_EVS"
-            @click="changeStatEV(key, i)"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              class="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fill-rule="evenodd"
-                d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                clip-rule="evenodd"
-              />
-            </svg>
-            {{ i }}
-          </button>
-        </div>
-      </div>
-      <button class="block my-5 btn btn-primary" @click="reset">Reset</button>
+      <StatEditor :ev-items="evItems" />
       Total EVs:
-      <span :class="{ 'text-red-500': totalEVs > MAX_EVS || totalEVs < 0 }">
-        {{ totalEVs }}/{{ MAX_EVS }}{{ totalEVs > MAX_EVS ? '; too many EVs!' : '' }}
+      <span
+        :class="{
+          'text-red-500': statsStore.totalEVs > MAX_EVS || statsStore.totalEVs < 0,
+        }"
+      >
+        {{ statsStore.totalEVs }}/{{ MAX_EVS
+        }}{{ statsStore.totalEVs > MAX_EVS ? '; too many EVs!' : '' }}
       </span>
+      <button class="block my-5 btn btn-primary" @click="reset">Reset</button>
     </div>
   </div>
   <div v-else>Loading</div>
