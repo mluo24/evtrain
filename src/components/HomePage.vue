@@ -16,49 +16,51 @@ import { useStatsStore } from '../stores/stats'
 import { useSelectionsStore } from '../stores/selections'
 import { useHistoryStore } from '../stores/history'
 import StatEditor from './StatEditor.vue'
+import { storeToRefs } from 'pinia'
 
 const statsStore = useStatsStore()
 const selectionsStore = useSelectionsStore()
+const { pokerus, selectedItem, selectedPreset } = storeToRefs(selectionsStore)
 const historyStore = useHistoryStore()
 
-const statsCounter = reactive(
-  new Map([
-    ['hp', ref(0)],
-    ['attack', ref(0)],
-    ['defense', ref(0)],
-    ['specialAttack', ref(0)],
-    ['specialDefense', ref(0)],
-    ['speed', ref(0)],
-  ])
-)
+// put some watchers here so that you can save to the local storage
+
+// const statsCounter = reactive(
+//   new Map([
+//     ['hp', ref(0)],
+//     ['attack', ref(0)],
+//     ['defense', ref(0)],
+//     ['specialAttack', ref(0)],
+//     ['specialDefense', ref(0)],
+//     ['speed', ref(0)],
+//   ])
+// )
 
 // const changeStatEV = (stat: string, amt: number) => {
 //   const statRef = statsCounter.get(stat)
 //   if (statRef !== undefined) statRef.value += amt
 // }
 
-const totalEVs = computed(() => {
-  let sum = 0
-  for (const [, value] of statsCounter.entries()) sum += value.value
-  return sum
-})
+// const totalEVs = computed(() => {
+//   let sum = 0
+//   for (const [, value] of statsCounter.entries()) sum += value.value
+//   return sum
+// })
 
-const selectedPreset = ref('')
+// const selectedPreset = ref('')
 
 watch(selectedPreset, (newP, oldP) => {
   if (oldP !== '') {
     const oldPresetEffect = presets.filter((p) => p.name === oldP)[0].effect
-    if (totalEVs.value > 0)
+    if (statsStore.totalEVs > 0)
       oldPresetEffect.forEach((e) => {
-        statsCounter.set(e.stat, ref(statsCounter.get(e.stat)!.value - e.value))
+        statsStore.setStatEV(e.stat, statsStore.stats.get(e.stat)! - e.value)
       })
   }
-
   if (newP !== '') {
     const newPresetEffect = presets.filter((p) => p.name === newP)[0].effect
-
     newPresetEffect.forEach((e) => {
-      statsCounter.set(e.stat, ref(statsCounter.get(e.stat)!.value + e.value))
+      statsStore.setStatEV(e.stat, statsStore.stats.get(e.stat)! + e.value)
     })
   }
 })
@@ -67,9 +69,9 @@ const getNameFromLang = (arr: Name[], language = 'en') => {
   return arr.filter((n) => n.language.name === language)[0].name
 }
 
-const pokerus = ref<boolean>(false)
+// const pokerus = ref<boolean>(false)
 
-const selectedItem = ref<string>('')
+// const selectedItem = ref<string>('')
 
 const evItems = ref<Item[]>([])
 
@@ -266,7 +268,7 @@ const addToHistory = async () => {
     pokemonBattleHistory.value.push(hist)
     const entries = [...calculateHistoryLine(hist).entries()]
     entries.forEach(([key, value]) => {
-      statsCounter.set(key, ref(statsCounter.get(key)!.value + value))
+      statsStore.setStatEV(key, statsStore.stats.get(key)! + value)
     })
   }
   loading.isLoadingAddHistory = false
@@ -281,7 +283,7 @@ const deleteHistoryEntry = (hist: BattleHistory) => {
   pokemonBattleHistory.value = pokemonBattleHistory.value.filter((h) => h !== hist)
   const entries = [...calculateHistoryLine(hist).entries()]
   entries.forEach(([key, value]) => {
-    statsCounter.set(key, ref(statsCounter.get(key)!.value - value))
+    statsStore.setStatEV(key, statsStore.stats.get(key)! - value)
   })
 }
 
@@ -312,11 +314,11 @@ const reset = () => {
     selectionsStore.$reset()
     statsStore.$reset()
     historyStore.$reset()
-    pokerus.value = false
-    selectedItem.value = ''
-    selectedPreset.value = ''
+    // pokerus.value = false
+    // selectedItem.value = ''
+    // selectedPreset.value = ''
     pokemonBattleHistory.value = []
-    for (const [key] of statsCounter.entries()) statsCounter.set(key, ref(0))
+    // for (const [key] of statsCounter.entries()) statsCounter.set(key, ref(0))
   }
 }
 

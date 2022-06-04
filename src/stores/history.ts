@@ -31,4 +31,27 @@ export const useHistoryStore = defineStore('history', {
       return incMap
     },
   },
+  actions: {
+    async addToHistory() {
+      // loading.isLoadingAddHistory = true
+      // if (selectedPokemon.value !== undefined) {
+      //   const stats = await getStats(selectedPokemon.value.code)
+      //   const hist = {
+      //     stats: stats,
+      //     ...selectedPokemon.value,
+      //     config: {
+      //       item: selectedItem.value,
+      //       effectText: effectText.value,
+      //       pokerus: pokerus.value,
+      //     },
+      //   }
+      //   pokemonBattleHistory.value.push(hist)
+      //   const entries = [...calculateHistoryLine(hist).entries()]
+      //   entries.forEach(([key, value]) => {
+      //     statsCounter.set(key, ref(statsCounter.get(key)!.value + value))
+      //   })
+      // }
+      // loading.isLoadingAddHistory = false
+    },
+  },
 })
