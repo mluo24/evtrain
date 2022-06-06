@@ -1,13 +1,21 @@
-import { defineStore } from 'pinia'
-import { increments, parseEffectText, statsToString } from '../utils'
+import { defineStore, storeToRefs } from 'pinia'
+import {
+  calculateHistoryLine,
+  getStats,
+  increments,
+  parseEffectText,
+  statsToString,
+} from '../utils'
 import { useStatsStore } from './stats'
 import { useSelectionsStore } from './selections'
+import { BattleHistory } from '../types'
 
 export const useHistoryStore = defineStore('history', {
   state: () => ({
-    battleHistory: [],
+    battleHistory: [] as BattleHistory[],
   }),
   getters: {
+    // it's actually possible to get rid of this since it doesn't seem like it's being used anywhere
     computedIncrements() {
       const statsStore = useStatsStore()
       const selectionsStore = useSelectionsStore()
@@ -33,25 +41,40 @@ export const useHistoryStore = defineStore('history', {
   },
   actions: {
     async addToHistory() {
+      const selectionsStore = useSelectionsStore()
+      const statsStore = useStatsStore()
+
+      const { selectedPokemon, selectedItem, effectText, pokerus } =
+        storeToRefs(selectionsStore)
+
       // loading.isLoadingAddHistory = true
-      // if (selectedPokemon.value !== undefined) {
-      //   const stats = await getStats(selectedPokemon.value.code)
-      //   const hist = {
-      //     stats: stats,
-      //     ...selectedPokemon.value,
-      //     config: {
-      //       item: selectedItem.value,
-      //       effectText: effectText.value,
-      //       pokerus: pokerus.value,
-      //     },
-      //   }
-      //   pokemonBattleHistory.value.push(hist)
-      //   const entries = [...calculateHistoryLine(hist).entries()]
-      //   entries.forEach(([key, value]) => {
-      //     statsCounter.set(key, ref(statsCounter.get(key)!.value + value))
-      //   })
-      // }
-      // loading.isLoadingAddHistory = false
+      if (selectedPokemon.value !== undefined) {
+        const stats = await getStats(selectedPokemon.value.code)
+        const hist = {
+          stats: stats,
+          ...selectedPokemon.value,
+          config: {
+            item: selectedItem.value,
+            effectText: effectText.value,
+            pokerus: pokerus.value,
+          },
+        }
+        this.battleHistory.push(hist)
+        const entries = [...calculateHistoryLine(hist).entries()]
+        entries.forEach(([key, value]) => {
+          statsStore.changeStatEV(key, value)
+        })
+      }
+      // loading.isLoadingAddHistory = falsex
+    },
+    deleteHistoryEntry(hist: BattleHistory) {
+      const statsStore = useStatsStore()
+
+      this.battleHistory = this.battleHistory.filter((h) => h !== hist)
+      const entries = [...calculateHistoryLine(hist).entries()]
+      entries.forEach(([key, value]) => {
+        statsStore.changeStatEV(key, -value)
+      })
     },
   },
 })

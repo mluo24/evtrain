@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { SelectOption } from '../types'
 import { getItemDetails } from '../utils'
 
 export const useSelectionsStore = defineStore('selections', {
@@ -7,6 +8,9 @@ export const useSelectionsStore = defineStore('selections', {
     selectedItem: '',
     effectText: '',
     selectedPreset: '',
+    selectedPokemon: {} as SelectOption,
+    selectedLocation: {} as SelectOption,
+    selectedRegion: {} as SelectOption,
   }),
   actions: {
     async getEffectText() {

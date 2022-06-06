@@ -12,6 +12,7 @@ const statsStore = useStatsStore()
 // need to subscribe to a state here to make sure effectText is properly updated
 const selectionStore = useSelectionsStore()
 
+// TODO: fix this logic
 selectionStore.$subscribe(() => {
   selectionStore.getEffectText()
 })

@@ -1,6 +1,7 @@
 // CONSTANTS
 
-import { ItemClient } from 'pokenode-ts'
+import { ItemClient, PokemonClient } from 'pokenode-ts'
+import { BattleHistory } from './types'
 
 export const MAX_EVS = 510
 export const MAX_EVS_STAT = 255
@@ -64,6 +65,10 @@ export const itemAPI = new ItemClient({
   cacheOptions: { maxAge: 5000, exclude: { query: false } },
 })
 
+export const pokemonAPI = new PokemonClient({
+  cacheOptions: { maxAge: 10000, exclude: { query: false } },
+})
+
 // FUNCTIONS
 
 export const unwrapUndefined = (n: undefined | number) => {
@@ -92,4 +97,28 @@ export const parseEffectText = (effect: string, stat: string) => {
 export const getItemDetails = async (name: string) => {
   const itemData = await itemAPI.getItemByName(name)
   return itemData
+}
+
+export const getStats = async (name: string) => {
+  return (await pokemonAPI.getPokemonByName(name)).stats
+}
+
+export const calculateHistoryLine = (hist: BattleHistory) => {
+  const statChanges = new Map()
+  const { stats, config } = hist
+  stats.forEach((stat) => {
+    let statName = stat.stat.name
+    if (statName === 'special-attack') statName = 'specialAttack'
+    else if (statName === 'special-defense') statName = 'specialDefense'
+    // verbose stat name
+    const verboseName = statsToString.get(statName)
+    if (verboseName)
+      statChanges.set(
+        statName,
+        config.pokerus
+          ? 2 * parseEffectText(config.effectText, verboseName)(stat.effort)
+          : parseEffectText(config.effectText, verboseName)(stat.effort)
+      )
+  })
+  return statChanges
 }

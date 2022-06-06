@@ -1,9 +1,7 @@
 import { defineStore } from 'pinia'
-// import { reactive, ref } from 'vue'
 
 export const useStatsStore = defineStore('stats', {
   state: () => ({
-    // should this be having refs??? idk
     stats: new Map([
       ['hp', 0],
       ['attack', 0],
