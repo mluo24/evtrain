@@ -8,9 +8,9 @@ export const useSelectionsStore = defineStore('selections', {
     selectedItem: '',
     effectText: '',
     selectedPreset: '',
-    selectedPokemon: {} as SelectOption,
-    selectedLocation: {} as SelectOption,
-    selectedRegion: {} as SelectOption,
+    selectedPokemon: { label: '', code: '' } as SelectOption,
+    selectedLocation: { label: '', code: '' } as SelectOption,
+    selectedRegion: { label: '', code: '' } as SelectOption,
   }),
   actions: {
     async getEffectText() {
