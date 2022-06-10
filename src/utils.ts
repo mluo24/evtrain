@@ -1,5 +1,8 @@
 // CONSTANTS
 
+import { ItemClient, PokemonClient } from 'pokenode-ts'
+import { BattleHistory } from './types'
+
 export const MAX_EVS = 510
 export const MAX_EVS_STAT = 255
 
@@ -55,3 +58,67 @@ export const presets = [
     ],
   },
 ]
+
+// API for PokeAPI
+
+export const itemAPI = new ItemClient({
+  cacheOptions: { maxAge: 5000, exclude: { query: false } },
+})
+
+export const pokemonAPI = new PokemonClient({
+  cacheOptions: { maxAge: 10000, exclude: { query: false } },
+})
+
+// FUNCTIONS
+
+export const unwrapUndefined = (n: undefined | number) => {
+  return n === undefined ? 0 : n
+}
+
+// parse the effect text, return a function with the correct value
+export const parseEffectText = (effect: string, stat: string) => {
+  const end = effect.indexOf('effort')
+  const start = effect.indexOf('gains') + 'gains'.length
+  const relText = effect.substring(start, end).trim()
+  if (relText.includes('double')) {
+    return (i: number) => i * 2
+  } else if (relText.includes(stat)) {
+    const inc = Number(relText.substring(0, relText.indexOf(stat)).trim())
+    if (!isNaN(inc))
+      // if it matches the stat passed in
+      return (i: number) => i + inc
+    else return (i: number) => i
+  } else {
+    // otherwise return identity function
+    return (i: number) => i
+  }
+}
+
+export const getItemDetails = async (name: string) => {
+  const itemData = await itemAPI.getItemByName(name)
+  return itemData
+}
+
+export const getStats = async (name: string) => {
+  return (await pokemonAPI.getPokemonByName(name)).stats
+}
+
+export const calculateHistoryLine = (hist: BattleHistory) => {
+  const statChanges = new Map()
+  const { stats, config } = hist
+  stats.forEach((stat) => {
+    let statName = stat.stat.name
+    if (statName === 'special-attack') statName = 'specialAttack'
+    else if (statName === 'special-defense') statName = 'specialDefense'
+    // verbose stat name
+    const verboseName = statsToString.get(statName)
+    if (verboseName)
+      statChanges.set(
+        statName,
+        config.pokerus
+          ? 2 * parseEffectText(config.effectText, verboseName)(stat.effort)
+          : parseEffectText(config.effectText, verboseName)(stat.effort)
+      )
+  })
+  return statChanges
+}
