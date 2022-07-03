@@ -47,8 +47,7 @@ export const useHistoryStore = defineStore('history', {
       const { selectedPokemon, selectedItem, effectText, pokerus } =
         storeToRefs(selectionsStore)
 
-      // loading.isLoadingAddHistory = true
-      if (selectedPokemon.value !== undefined) {
+      if (selectedPokemon.value.code) {
         const stats = await getStats(selectedPokemon.value.code)
         const hist = {
           stats: stats,
@@ -65,7 +64,6 @@ export const useHistoryStore = defineStore('history', {
           statsStore.changeStatEV(key, value)
         })
       }
-      // loading.isLoadingAddHistory = falsex
     },
     deleteHistoryEntry(hist: BattleHistory) {
       const statsStore = useStatsStore()
