@@ -16,7 +16,7 @@ const { battleHistory } = storeToRefs(historyStore)
 const { selectedRegion, selectedLocation, selectedPokemon } =
   storeToRefs(selectionsStore)
 
-// Location PI
+// Location API
 const locationAPI = new LocationClient({
   cacheOptions: { maxAge: 10000, exclude: { query: false } },
 })
