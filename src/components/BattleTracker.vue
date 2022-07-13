@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computedAsync } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { LocationClient, Name, PokemonStat } from 'pokenode-ts'
-import { computed, reactive, ref, watch } from 'vue'
+import { LocationClient, Name } from 'pokenode-ts'
+import { reactive, watch } from 'vue'
+import { getRegionList, relevantStats } from '../battle-tracker'
 import { useHistoryStore } from '../stores/history'
 import { useSelectionsStore } from '../stores/selections'
 import { BattleHistory } from '../types'
-import { calculateHistoryLine, pokemonAPI, regions, statsToString } from '../utils'
+import { calculateHistoryLine, pokemonAPI, statsToString } from '../utils'
 
 const historyStore = useHistoryStore()
 const selectionsStore = useSelectionsStore()
@@ -24,23 +25,6 @@ const locationAPI = new LocationClient({
 const getNameFromLang = (arr: Name[], language = 'en') => {
   return arr.filter((n) => n.language.name === language)[0].name
 }
-
-// remove all of the zero stats
-const relevantStats = (stats: PokemonStat[]) => {
-  return stats.filter((s) => s.effort !== 0)
-}
-
-const regionList = ref<string[]>(regions)
-
-// turns the region list into options digestable by the searchable dropdown
-const regionListOptions = computed(() => {
-  return regionList.value.map((region) => {
-    return {
-      label: region,
-      code: region.toLowerCase(),
-    }
-  })
-})
 
 const areaList = computedAsync(async () => {
   if (selectedRegion.value !== undefined)
@@ -162,7 +146,7 @@ const loading = reactive({
     <label class="label">
       <span class="label-text">Region</span>
     </label>
-    <v-select v-model="selectedRegion" :options="regionListOptions"></v-select>
+    <v-select v-model="selectedRegion" :options="getRegionList()"></v-select>
     <label class="label">
       <span class="label-text">Area</span>
       <svg
