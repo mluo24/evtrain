@@ -29,7 +29,12 @@ const getNameFromLang = (namedResources: Name[], languageCode = 'en'): string =>
   return namedResources.filter((n) => n.language.name === languageCode)[0].name
 }
 
-export const getAreaList = async (selectedRegion: SelectOption) => {
+/**
+ * Gets the list of locations that exist in the selected regions
+ */
+export const getAreaList = async (
+  selectedRegion: SelectOption
+): Promise<SelectOption[]> => {
   if (selectedRegion !== undefined) {
     const locations = (await locationAPI.getRegionByName(selectedRegion.code))
       .locations
@@ -42,7 +47,13 @@ export const getAreaList = async (selectedRegion: SelectOption) => {
   } else return []
 }
 
-export const getPokemonList = async (selectedRegion: SelectOption) => {
+/**
+ * Gets the list of Pokémon names as strings that could be found within that
+ * location
+ */
+export const getPokemonList = async (
+  selectedRegion: SelectOption
+): Promise<string[]> => {
   if (selectedRegion !== undefined) {
     const loc = await locationAPI.getLocationByName(selectedRegion.code)
     const pList = (
@@ -62,7 +73,12 @@ export const getPokemonList = async (selectedRegion: SelectOption) => {
   return []
 }
 
-export const getPokemonNamesList = async (pokemonList: string[]) => {
+/**
+ * Converts a list of Pokémon string names to appropriate SelectOptions
+ */
+export const getPokemonNamesList = async (
+  pokemonList: string[]
+): Promise<SelectOption[]> => {
   const namesList = await Promise.all(
     pokemonList.map(async (p) => {
       return {
@@ -91,7 +107,11 @@ export const getPokemonNamesList = async (pokemonList: string[]) => {
   })
 }
 
-export const processStatString = (hist: BattleHistory) => {
+/**
+ * Returns a string that verbalizes EVs from Pokémon defeated, EVs earned in total,
+ * and item used when the Pokémon was defeated.
+ */
+export const processStatString = (hist: BattleHistory): string => {
   const relStats = relevantStats(hist.stats)
   return (
     'EVs: ' +
@@ -114,6 +134,6 @@ export const processStatString = (hist: BattleHistory) => {
  * @param stats A list of Pokémon stats
  * @returns A list of stats where each stat value is not 0
  */
-export const relevantStats = (stats: PokemonStat[]) => {
+export const relevantStats = (stats: PokemonStat[]): PokemonStat[] => {
   return stats.filter((s) => s.effort !== 0)
 }
