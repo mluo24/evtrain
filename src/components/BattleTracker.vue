@@ -1,133 +1,52 @@
 <script setup lang="ts">
-import { computedAsync } from '@vueuse/core'
 import { storeToRefs } from 'pinia'
-import { LocationClient, Name } from 'pokenode-ts'
-import { reactive, watch } from 'vue'
-import { getRegionList, relevantStats } from '../battle-tracker'
+import { reactive, ref, watch } from 'vue'
+import {
+  getAreaList,
+  getPokemonList,
+  getRegionList,
+  processStatString,
+} from '../battle-tracker'
 import { useHistoryStore } from '../stores/history'
 import { useSelectionsStore } from '../stores/selections'
-import { BattleHistory } from '../types'
-import { calculateHistoryLine, pokemonAPI, statsToString } from '../utils'
+import { SelectOption } from '../types'
 
+// stores
 const historyStore = useHistoryStore()
 const selectionsStore = useSelectionsStore()
 
+// refs
 const { battleHistory } = storeToRefs(historyStore)
 
 const { selectedRegion, selectedLocation, selectedPokemon } =
   storeToRefs(selectionsStore)
 
-// Location API
-const locationAPI = new LocationClient({
-  cacheOptions: { maxAge: 10000, exclude: { query: false } },
-})
+const areaList = ref<SelectOption[]>([])
 
-const getNameFromLang = (arr: Name[], language = 'en') => {
-  return arr.filter((n) => n.language.name === language)[0].name
-}
+const pokemonList = ref<SelectOption[]>([])
 
-const areaList = computedAsync(async () => {
-  if (selectedRegion.value !== undefined)
-    return Promise.all(
-      (await locationAPI.getRegionByName(selectedRegion.value.code)).locations.map(
-        async (location) => {
-          const regionData = await locationAPI.getLocationByName(location.name)
-          return { label: getNameFromLang(regionData.names), code: location.name }
-        }
-      )
-    )
-  else return []
-}, [])
-
-// has only a list of the pokemon names
-const pokemonList = computedAsync(async () => {
-  if (selectedLocation.value !== undefined) {
-    const loc = await locationAPI.getLocationByName(selectedLocation.value.code)
-    const pList = (
-      await Promise.all(
-        loc.areas.map(async (area) => {
-          const locArea = await locationAPI.getLocationAreaByName(area.name)
-          return await Promise.all(
-            locArea.pokemon_encounters.map(async (encounter) => {
-              return encounter.pokemon.name
-            })
-          )
-        })
-      )
-    ).flat()
-    return pList.filter((p, index) => pList.indexOf(p) === index)
-  }
-  return []
-}, [])
-
-const pokemonNamesList = computedAsync(async () => {
-  const namesList = await Promise.all(
-    pokemonList.value.map(async (p) => {
-      return {
-        label: getNameFromLang(
-          (
-            await pokemonAPI.getPokemonSpeciesByName(
-              (
-                await pokemonAPI.getPokemonByName(p)
-              ).species.name
-            )
-          ).names
-        ),
-        code: p,
-      }
-    })
-  )
-  return namesList.filter((p, index) => {
-    let firstIndex = 0
-    for (let i = 0; i < namesList.length; i++) {
-      if (namesList[i].label === p.label) {
-        firstIndex = i
-        break
-      }
-    }
-    return firstIndex === index
-  })
-}, [])
-
-const processStatString = (hist: BattleHistory) => {
-  const relStats = relevantStats(hist.stats)
-  return (
-    'EVs: ' +
-    relStats
-      .map((s) => `${statsToString.get(s.stat.name)}: ${s.effort}`)
-      .join(', ') +
-    '; Earned: ' +
-    [...calculateHistoryLine(hist).entries()]
-      .filter((e) => e[1] !== 0)
-      .map((e) => `${e[1]} ${statsToString.get(e[0])} EV${e[1] === 1 ? '' : 's'}`)
-      .join(', ') +
-    ' with ' +
-    (hist.config.item ? hist.config.item : 'no item') +
-    (hist.config.pokerus ? ' and with Pokérus' : '')
-  )
-}
-
+// loading logic
 const submitToAddToHistory = async () => {
   loading.isLoadingAddHistory = true
   await historyStore.addToHistory()
   loading.isLoadingAddHistory = false
 }
 
-// loading logic
-
-watch(selectedRegion, (newR) => {
+watch(selectedRegion, async (newR) => {
   loading.isLoadingArea = newR.code !== ''
   selectedLocation.value = { label: '', code: '' }
   selectedPokemon.value = { label: '', code: '' }
+  areaList.value = await getAreaList(selectedRegion.value)
 })
 
 watch(areaList, () => {
   loading.isLoadingArea = false
 })
 
-watch(selectedLocation, (newLoc) => {
+watch(selectedLocation, async (newLoc) => {
   loading.isLoadingPokemon = newLoc.code !== ''
   selectedPokemon.value = { label: '', code: '' }
+  pokemonList.value = await getPokemonList(selectedLocation.value)
 })
 
 watch(pokemonList, () => {
@@ -186,7 +105,7 @@ const loading = reactive({
     </label>
     <v-select
       v-model="selectedPokemon"
-      :options="pokemonNamesList"
+      :options="pokemonList"
       :disabled="pokemonList.length === 0"
     ></v-select>
     <button

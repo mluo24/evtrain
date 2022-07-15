@@ -48,49 +48,43 @@ export const getAreaList = async (
 }
 
 /**
- * Gets the list of Pokémon names as strings that could be found within that
- * location
+ * Returns a list of possible encountered Pokémon given a location area
  */
-export const getPokemonList = async (
-  selectedRegion: SelectOption
-): Promise<string[]> => {
-  if (selectedRegion !== undefined) {
-    const loc = await locationAPI.getLocationByName(selectedRegion.code)
-    const pList = (
-      await Promise.all(
-        loc.areas.map(async (area) => {
-          const locArea = await locationAPI.getLocationAreaByName(area.name)
-          return await Promise.all(
-            locArea.pokemon_encounters.map(async (encounter) => {
-              return encounter.pokemon.name
-            })
-          )
-        })
-      )
-    ).flat()
-    return pList.filter((p, index) => pList.indexOf(p) === index)
-  }
-  return []
+const getPokemonEncounters = async (areaName: string) => {
+  const locArea = await locationAPI.getLocationAreaByName(areaName)
+  return Promise.all(
+    locArea.pokemon_encounters.map(async (encounter) => {
+      return encounter.pokemon.name
+    })
+  )
 }
 
 /**
- * Converts a list of Pokémon string names to appropriate SelectOptions
+ * Gets the display name of a Pokémon in English from its species.
+ * @returns
  */
-export const getPokemonNamesList = async (
+const getPokemonName = async (p: string): Promise<string> => {
+  return getNameFromLang(
+    (
+      await pokemonAPI.getPokemonSpeciesByName(
+        (
+          await pokemonAPI.getPokemonByName(p)
+        ).species.name
+      )
+    ).names
+  )
+}
+
+/**
+ * Converts a list of Pokémon string names as appropriate SelectOption instances
+ */
+const getPokemonNamesList = async (
   pokemonList: string[]
 ): Promise<SelectOption[]> => {
   const namesList = await Promise.all(
     pokemonList.map(async (p) => {
       return {
-        label: getNameFromLang(
-          (
-            await pokemonAPI.getPokemonSpeciesByName(
-              (
-                await pokemonAPI.getPokemonByName(p)
-              ).species.name
-            )
-          ).names
-        ),
+        label: await getPokemonName(p),
         code: p,
       }
     })
@@ -105,6 +99,26 @@ export const getPokemonNamesList = async (
     }
     return firstIndex === index
   })
+}
+
+/**
+ * Gets the list of Pokémon names as strings that could be found within that
+ * location
+ */
+export const getPokemonList = async (
+  selectedLocation: SelectOption
+): Promise<SelectOption[]> => {
+  if (selectedLocation !== undefined && selectedLocation.code !== '') {
+    const loc = await locationAPI.getLocationByName(selectedLocation.code)
+    const pokemonListPromise = loc.areas.map(async (area) => {
+      return getPokemonEncounters(area.name)
+    })
+    const pokemonList = (await Promise.all(pokemonListPromise)).flat()
+    // remove duplicates from list
+    const noDups = pokemonList.filter((p, index) => pokemonList.indexOf(p) === index)
+    return await getPokemonNamesList(noDups)
+  }
+  return []
 }
 
 /**
